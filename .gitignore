@@ -1,0 +1,17 @@
+# run outputs and media (can be GBs)
+results/
+*.mp4
+*.MOV
+*.mov
+*.npz
+# local configuration
+configs/paths.env
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+# model weights / caches
+*.pt
+*.pth
+.cache/

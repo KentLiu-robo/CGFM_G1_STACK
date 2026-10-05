@@ -1,0 +1,11 @@
+# Versions this code was developed and tested with (Python 3.9, CUDA 11.3). Newer versions are untested.
+numpy==1.26.4
+scipy==1.10.1
+opencv-python==4.5.5.64
+torch==1.12.1          # install the CUDA build matching your driver
+open_clip_torch==2.24.0
+open3d==0.18.0
+scikit-learn==1.2.2
+requests>=2.31
+Pillow>=10
+# runtime dependency, installed separately (see README):  vlfm  and  frontier_exploration
