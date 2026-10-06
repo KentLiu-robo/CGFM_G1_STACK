@@ -13,7 +13,8 @@ It receives control over localhost UDP and owns ALL robot safety:
   * if the ROS parent stops feeding packets (> cmd_timeout) -> zero velocity,
   * on SIGINT/SIGTERM/exit -> Damp.
 
-argv: <iface> <udp_port> <max_vx> <max_vy> <max_vyaw> <cmd_timeout> <rate>
+argv: <iface> <udp_port> <max_vx> <max_vy> <max_vyaw> <cmd_timeout> <rate> [<start_fsm_id>]
+(<iface>: NIC name or, on a NIC with several addresses, the IP to bind)
 """
 import sys
 import json
@@ -34,9 +35,17 @@ _CYCLONEDDS_CONFIG_NO_TRACING = '''<?xml version="1.0" encoding="UTF-8" ?>
     </CycloneDDS>'''
 
 
-def _patch_cyclonedds_tracing():
+def _patch_cyclonedds_tracing(iface):
     import unitree_sdk2py.core.channel as _ch
-    _ch.ChannelConfigHasInterface = _CYCLONEDDS_CONFIG_NO_TRACING
+    cfg = _CYCLONEDDS_CONFIG_NO_TRACING
+    if iface.replace('.', '').isdigit():
+        # iface given as an IP: bind by address. Binding by NIC name picks the
+        # NIC's FIRST address -- on a NIC with several (this dev machine's enp4s0
+        # has 10.1.1.101 + 192.168.123.165) cyclonedds then advertises the wrong
+        # one and never receives anything from the robot (verified 2026-09-30:
+        # 0 rt/lowstate msgs by name, ~1 kHz by address; every RPC returned 3102).
+        cfg = cfg.replace('name="$__IF_NAME__$"', 'address="$__IF_NAME__$"')
+    _ch.ChannelConfigHasInterface = cfg
 
 
 def clamp(v, lo, hi):
@@ -51,8 +60,9 @@ def main():
     max_vyaw    = float(sys.argv[5]) if len(sys.argv) > 5 else 0.8
     cmd_timeout = float(sys.argv[6]) if len(sys.argv) > 6 else 0.5
     rate        = float(sys.argv[7]) if len(sys.argv) > 7 else 50.0
+    start_fsm   = int(sys.argv[8]) if len(sys.argv) > 8 else 501
 
-    _patch_cyclonedds_tracing()
+    _patch_cyclonedds_tracing(iface)
     from unitree_sdk2py.core.channel import ChannelFactoryInitialize
     from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
 
@@ -83,7 +93,9 @@ def main():
                 if name == "damp":
                     client.Damp();           return True, "DAMPING (soft e-stop)"
                 if name == "start":
-                    client.Start();          return True, "start: Start() (FSM main op)"
+                    # not client.Start(): it hardcodes FSM 500 (1-DoF waist) and drops the code
+                    code = client.SetFsmId(start_fsm)
+                    return code == 0, "start: SetFsmId(%d) -> code %s" % (start_fsm, code)
             return False, "unknown cmd: %s" % name
         except Exception as e:  # noqa: BLE001
             return False, str(e)
@@ -137,20 +149,30 @@ def main():
 
     period = 1.0 / rate
     prev_en = False
+    last_code = 0
     while not stop["flag"]:
         t0 = time.monotonic()
         with st_lock:
             en, vx, vy, vyaw, last = (state["en"], state["vx"], state["vy"],
                                       state["vyaw"], state["last"])
         stale = (time.monotonic() - last) > cmd_timeout
+        code = None
         try:
             with cl_lock:
+                # SetVelocity(.., 1.0) == client.Move(), but Move() drops the RPC
+                # return code -- which hid 3102 (request never sent) for days.
                 if en:
-                    client.Move(0.0, 0.0, 0.0) if stale else client.Move(vx, vy, vyaw)
+                    code = (client.SetVelocity(0.0, 0.0, 0.0, 1.0) if stale
+                            else client.SetVelocity(vx, vy, vyaw, 1.0))
                 elif prev_en:
-                    client.Move(0.0, 0.0, 0.0)   # one stop on the enable->disable edge
+                    code = client.SetVelocity(0.0, 0.0, 0.0, 1.0)   # one stop on the enable->disable edge
         except Exception as e:  # noqa: BLE001
             print("[loco_driver] Move failed: %s" % e, flush=True)
+        if code is not None and code != last_code:
+            print("[loco_driver] SetVelocity code %s -> %s%s" % (
+                last_code, code, "" if code == 0 else "  (NON-ZERO: robot is NOT executing cmd_vel)"),
+                flush=True)
+            last_code = code
         prev_en = en
         dt = period - (time.monotonic() - t0)
         if dt > 0:

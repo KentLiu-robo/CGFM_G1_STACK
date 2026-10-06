@@ -52,6 +52,12 @@ class G1SdkBridge(Node):
         self.declare_parameter('control_rate', 50.0)
         self.declare_parameter('enable_on_start', False)
         self.declare_parameter('driver_port', 43897)
+        # FSM that ~/start switches to. LocoClient.Start() hardcodes 500, which is
+        # the regular mode of the 1-DoF-waist G1 only; the 3-DoF-waist G1 needs 501
+        # (verified 2026-09-30: SetFsmId(500) returned 0 but was ignored; in 802
+        # "walk-run", entered from the remote, velocity RPCs return 0 but are not
+        # executed; after SetFsmId(501) cmd_vel turns the robot).
+        self.declare_parameter('start_fsm_id', 501)
 
         iface = self.get_parameter('network_interface').value
         self.max_vx = float(self.get_parameter('max_vx').value)
@@ -60,6 +66,7 @@ class G1SdkBridge(Node):
         self.cmd_timeout = float(self.get_parameter('cmd_timeout').value)
         rate = float(self.get_parameter('control_rate').value)
         port = int(self.get_parameter('driver_port').value)
+        start_fsm_id = int(self.get_parameter('start_fsm_id').value)
 
         self._lock = threading.Lock()
         self.enabled = bool(self.get_parameter('enable_on_start').value)
@@ -79,12 +86,12 @@ class G1SdkBridge(Node):
                               'g1_loco_driver.py')
         if not os.path.exists(driver):
             raise FileNotFoundError('SDK driver not found: %s' % driver)
-        self.get_logger().info('Spawning SDK driver %s (iface=%s udp=%d)'
-                               % (driver, iface, port))
+        self.get_logger().info('Spawning SDK driver %s (iface=%s udp=%d start_fsm_id=%d)'
+                               % (driver, iface, port, start_fsm_id))
         self._child = subprocess.Popen(
             [sys.executable, driver, str(iface), str(port),
              str(self.max_vx), str(self.max_vy), str(self.max_vyaw),
-             str(self.cmd_timeout), str(rate)])
+             str(self.cmd_timeout), str(rate), str(start_fsm_id)])
         atexit.register(self._kill_child)
 
         threading.Thread(target=self._recv_acks, daemon=True).start()

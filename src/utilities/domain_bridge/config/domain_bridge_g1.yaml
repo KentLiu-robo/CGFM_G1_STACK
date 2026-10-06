@@ -1,0 +1,21 @@
+name: domain_bridge
+# Perception side (Jetson on G1): lidar driver + arise_slam_mid360 run here, in
+# ROS_DOMAIN_ID=1 (matches docker/Dockerfile.sdk's isolation from the robot's
+# native DDS on domain 0).
+from_domain: 1
+# Planning side (this machine): terrain_analysis(_ext), sensor_scan_generation,
+# local_planner, far_planner, visualization_tools, joy, rviz run here.
+# Motion control does NOT go through this bridge: pathFollower's /cmd_vel is
+# consumed locally by g1_sdk_bridge, which talks to the robot directly over
+# unitree_sdk2 DDS (see system_g1_planner.launch) -- Jetson is perception-only.
+to_domain: 2
+topics:
+  # perception (Jetson) -> planner (this machine), one-way
+  registered_scan:
+    type: sensor_msgs/msg/PointCloud2
+  state_estimation:
+    type: nav_msgs/msg/Odometry
+  tf:
+    type: tf2_msgs/msg/TFMessage
+  tf_static:
+    type: tf2_msgs/msg/TFMessage

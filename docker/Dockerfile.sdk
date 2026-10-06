@@ -34,9 +34,17 @@ RUN pip install --no-cache-dir --break-system-packages cyclonedds==0.10.2 numpy 
 #     isolates the autonomy stack from the robot's ~100 domain-0 DDS participants,
 #     which otherwise congest Fast DDS discovery and drop IMU/lidar frames -> SLAM
 #     drift. (Borrowed from the will_nx branch's localization fix.)
+#   - portaudio19-dev: needed to import unitree_webrtc_connect (pulls in
+#     sounddevice, which needs libportaudio at import time even though we
+#     never touch audio). NOT currently used: system_g1_planner.launch controls
+#     the robot via g1_sdk_bridge (unitree_sdk2 DDS, see
+#     src/unitree_g1_sdk_bridge), not src/unitree_webrtc_ros -- the AES-128 key
+#     WebRTC needs on G1 fw >= 1.5.1 requires a Unitree cloud account. Left
+#     installed in case WebRTC control is revisited; harmless either way.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-jazzy-foxglove-bridge \
       ros-jazzy-rmw-cyclonedds-cpp \
+      portaudio19-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Isolate ROS2 traffic from the robot's native DDS (domain 0) via ROS_DOMAIN_ID=1.

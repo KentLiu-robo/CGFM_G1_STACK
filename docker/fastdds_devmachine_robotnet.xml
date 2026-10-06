@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Fast DDS profile for the planner machine (FASTRTPS_DEFAULT_PROFILES_FILE).
+  This machine's enp4s0 carries two addresses (10.1.1.101 first, then
+  192.168.123.165 on the robot net). Restrict ROS 2 traffic to the robot-net
+  address so remote participants (the G1 Jetson) are only ever told to send to
+  a reachable locator -- the same multi-address problem made the unitree_sdk2
+  cyclonedds link completely deaf (2026-09-30, see QUICKSTART_G1.md).
+  Built-in transports (incl. shared memory) are replaced by this single UDPv4
+  transport; local nodes still talk to each other over it.
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>udp_robotnet</transport_id>
+      <type>UDPv4</type>
+      <interfaceWhiteList>
+        <address>192.168.123.165</address>
+      </interfaceWhiteList>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="robotnet_only" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>udp_robotnet</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>

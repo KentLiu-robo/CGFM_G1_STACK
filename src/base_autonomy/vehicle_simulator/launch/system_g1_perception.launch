@@ -1,0 +1,60 @@
+import os
+
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource, FrontendLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
+
+# Perception side (runs on the Jetson mounted on G1): lidar driver + SLAM,
+# nothing else. Produces /state_estimation and /registered_scan, which
+# domain_bridge_g1.yaml forwards to the planner machine.
+#
+# No G1 control node here -- motion control runs on the planner machine via
+# g1_sdk_bridge (unitree_sdk2 DDS, no AES key), talking to the robot directly
+# (see system_g1_planner.launch). Jetson is perception-only.
+#
+# Also does NOT include local_planner, terrain_analysis(_ext),
+# sensor_scan_generation, visualization_tools, far_planner, or RViz -- those
+# run on the planner machine too. All of them only depend on
+# /state_estimation + /registered_scan, so nothing else needs to cross the
+# network.
+
+def generate_launch_description():
+  bridge_config = LaunchConfiguration('bridge_config')
+
+  declare_bridge_config = DeclareLaunchArgument(
+    'bridge_config',
+    default_value=os.path.join(
+      get_package_share_directory('domain_bridge'), 'config', 'domain_bridge_g1.yaml'),
+    description='domain_bridge yaml (from_domain=Jetson ROS_DOMAIN_ID, to_domain=planner machine).'
+  )
+
+  start_arise_slam = IncludeLaunchDescription(
+    PythonLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('arise_slam_mid360'), 'launch', 'arize_slam.launch.py')
+    )
+  )
+
+  start_mid360 = IncludeLaunchDescription(
+    PythonLaunchDescriptionSource(
+      [get_package_share_directory('livox_ros_driver2'), '/launch_ROS2/msg_MID360_launch.py']),
+  )
+
+  start_domain_bridge = IncludeLaunchDescription(
+    FrontendLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('domain_bridge'), 'launch', 'domain_bridge.launch')
+    ),
+    launch_arguments={
+      'config': bridge_config,
+    }.items()
+  )
+
+  ld = LaunchDescription()
+  ld.add_action(declare_bridge_config)
+
+  ld.add_action(start_arise_slam)
+  ld.add_action(start_mid360)
+  ld.add_action(start_domain_bridge)
+
+  return ld
